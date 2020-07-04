@@ -95,7 +95,12 @@ int executeFile(const char *path, char *const argv[], char *const envp[], FileSy
 
                 if (bytesRead > 0)
                 {
-                    Process* newProcess = createUserProcessFromElfData("userProcess", image, argv, envp, process, tty);
+                    char* name = "userProcess";
+                    if (NULL != argv && NULL != argv[0])
+                    {
+                        name = argv[0];
+                    }
+                    Process* newProcess = createUserProcessFromElfData(name, image, argv, envp, process, tty);
 
                     if (newProcess)
                     {
@@ -159,6 +164,7 @@ int kmain(struct Multiboot *mboot_ptr)
     printkf("Memory initialized for %d MB\n", memoryKb / 1024);
     printkf("Kernel start: %x - end:%x\n", gPhysicalKernelStartAddress, gPhysicalKernelEndAddress);
     printkf("Initial stack: %x\n", &stack);
+    printkf("Video: %x\n", (uint32)mboot_ptr->framebuffer_addr);
     printkf("Video: %dx%dx%d Pitch:%d\n", mboot_ptr->framebuffer_width, mboot_ptr->framebuffer_height, mboot_ptr->framebuffer_bpp, mboot_ptr->framebuffer_pitch);
 
     initializeSystemFS();
@@ -181,7 +187,7 @@ int kmain(struct Multiboot *mboot_ptr)
 
     Debug_initialize("/dev/tty9");
 
-    Serial_PrintF("pitch:%d\n", mboot_ptr->framebuffer_pitch);
+    Serial_PrintF("Serial out start!\n");
 
     initializeRandom();
     initializeNull();

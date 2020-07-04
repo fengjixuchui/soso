@@ -1,0 +1,1 @@
+#define PAGESIZE 0x00400000 //4096

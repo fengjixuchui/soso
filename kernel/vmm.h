@@ -28,7 +28,7 @@ void releasePdFromReservedArea4K(uint32 *);
 void initializeMemory(uint32 high_mem);
 
 uint32 *createPd();
-void destroyPd(uint32 *);
+void destroyPd(Process* process);
 uint32 *copyPd(uint32* pd);
 
 BOOL addPageToPd(uint32* pd, char *v_addr, char *p_addr, int flags);
@@ -41,8 +41,8 @@ uint32 getTotalPageCount();
 uint32 getUsedPageCount();
 uint32 getFreePageCount();
 
-void initializeProcessMmap(Process* process);
-void* mapMemory(Process* process, uint32 nBytes, uint32 pAddress, List* pAddressList);
+void initializeProcessPages(Process* process);
+void* mapMemory(Process* process, uint32 nBytes, uint32 vAddressSearchStart, uint32 pAddress, List* pAddressList, BOOL own);
 BOOL unmapMemory(Process* process, uint32 nBytes, uint32 vAddress);
 
 #endif // VMM_H

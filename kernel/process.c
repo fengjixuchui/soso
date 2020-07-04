@@ -12,6 +12,8 @@
 
 #define MESSAGE_QUEUE_SIZE 64
 
+#define AUX_VECTOR_SIZE_BYTES (AUX_CNT * sizeof (Elf32_auxv_t))
+
 Process* gKernelProcess = NULL;
 
 Thread* gFirstThread = NULL;
@@ -26,6 +28,8 @@ uint32 gSystemContextSwitchCount = 0;
 uint32 gLastUptimeSeconds = 0;
 
 extern Tss gTss;
+
+static void fillAuxilaryVector(uint32 location, void* elfData);
 
 uint32 generateProcessId()
 {
@@ -194,9 +198,9 @@ static void destroyStringArray(char** array)
 }
 
 //This function must be called within the correct page directory for target process
-static void copyArgvEnvToProcess(char *const argv[], char *const envp[])
+static void copyArgvEnvToProcess(uint32 location, void* elfData, char *const argv[], char *const envp[])
 {
-    char** destination = (char**)USER_ARGV_ENV_LOC;
+    char** destination = (char**)location;
     int destinationIndex = 0;
 
     //Screen_PrintF("ARGVENV: destination:%x\n", destination);
@@ -206,7 +210,9 @@ static void copyArgvEnvToProcess(char *const argv[], char *const envp[])
 
     //Screen_PrintF("ARGVENV: argvCount:%d envpCount:%d\n", argvCount, envpCount);
 
-    char* stringTable = (char*)USER_ARGV_ENV_LOC + sizeof(char*) * (argvCount + envpCount + 2);
+    char* stringTable = (char*)location + sizeof(char*) * (argvCount + envpCount + 3) + AUX_VECTOR_SIZE_BYTES;
+
+    uint32 auxVectorLocation = location + sizeof(char*) * (argvCount + envpCount + 2);
 
     //Screen_PrintF("ARGVENV: stringTable:%x\n", stringTable);
 
@@ -235,6 +241,76 @@ static void copyArgvEnvToProcess(char *const argv[], char *const envp[])
     }
 
     destination[destinationIndex++] = NULL;
+
+    fillAuxilaryVector(auxVectorLocation, elfData);
+}
+
+static void fillAuxilaryVector(uint32 location, void* elfData)
+{
+    Elf32_auxv_t* auxv = (Elf32_auxv_t*)location;
+
+
+    memset((uint8*)auxv, 0, AUX_VECTOR_SIZE_BYTES);
+
+    Elf32_Ehdr *hdr = (Elf32_Ehdr *) elfData;
+    Elf32_Phdr *p_entry = (Elf32_Phdr *) (elfData + hdr->e_phoff);
+
+    auxv[0].a_type = AT_HWCAP2;
+    auxv[0].a_un.a_val = 0;
+
+    auxv[1].a_type = AT_IGNORE;
+    auxv[1].a_un.a_val = 0;
+
+    auxv[2].a_type = AT_EXECFD;
+    auxv[2].a_un.a_val = 0;
+
+    auxv[3].a_type = AT_PHDR;
+    auxv[3].a_un.a_val = 0;//(uint32)p_entry;
+
+    auxv[4].a_type = AT_PHENT;
+    auxv[4].a_un.a_val = 0;//(uint32)p_entry->p_memsz;
+
+    auxv[5].a_type = AT_PHNUM;
+    auxv[5].a_un.a_val = 0;//hdr->e_phnum;
+
+    auxv[6].a_type = AT_PAGESZ;
+    auxv[6].a_un.a_val = PAGESIZE_4M;
+
+    auxv[7].a_type = AT_BASE;
+    auxv[7].a_un.a_val = 0;
+
+    auxv[8].a_type = AT_FLAGS;
+    auxv[8].a_un.a_val = 0;
+
+    auxv[9].a_type = AT_ENTRY;
+    auxv[9].a_un.a_val = (uint32)hdr->e_entry;
+
+    auxv[10].a_type = AT_NOTELF;
+    auxv[10].a_un.a_val = 0;
+
+    auxv[11].a_type = AT_UID;
+    auxv[11].a_un.a_val = 0;
+
+    auxv[12].a_type = AT_EUID;
+    auxv[12].a_un.a_val = 0;
+
+    auxv[13].a_type = AT_GID;
+    auxv[13].a_un.a_val = 0;
+
+    auxv[14].a_type = AT_EGID;
+    auxv[14].a_un.a_val = 0;
+
+    auxv[15].a_type = AT_CLKTCK;
+    auxv[15].a_un.a_val = 100;
+
+    auxv[16].a_type = AT_PLATFORM;
+    auxv[16].a_un.a_val = 0;
+
+    auxv[16].a_type = AT_SECURE;
+    auxv[16].a_un.a_val = 0;
+
+    auxv[17].a_type = AT_NULL;
+    auxv[17].a_un.a_val = 0;
 }
 
 Process* createUserProcessFromElfData(const char* name, uint8* elfData, char *const argv[], char *const envp[], Process* parent, FileSystemNode* tty)
@@ -249,6 +325,13 @@ Process* createUserProcessFromFunction(const char* name, Function0 func, char *c
 
 Process* createUserProcessEx(const char* name, uint32 processId, uint32 threadId, Function0 func, uint8* elfData, char *const argv[], char *const envp[], Process* parent, FileSystemNode* tty)
 {
+    uint32 imageDataEndInMemory = getElfEndInMemory((char*)elfData);
+
+    if (imageDataEndInMemory <= USER_OFFSET)
+    {
+        return NULL;
+    }
+
     if (0 == processId)
     {
         processId = generateProcessId();
@@ -282,9 +365,6 @@ Process* createUserProcessEx(const char* name, uint32 processId, uint32 threadId
 
     thread->regs.cr3 = (uint32) process->pd;
 
-    //Since stack grows backwards, we must allocate previous page. So lets substract a small amount.
-    uint32 stackp = USER_STACK-4;
-
     if (parent)
     {
         process->parent = parent;
@@ -305,11 +385,19 @@ Process* createUserProcessEx(const char* name, uint32 processId, uint32 threadId
     //Change memory view (page directory)
     asm("mov %0, %%eax; mov %%eax, %%cr3"::"m"(process->pd));
 
-    initializeProcessHeap(process);
+    initializeProcessPages(process);
 
-    initializeProcessMmap(process);
+    uint32 sizeInMemory = imageDataEndInMemory - USER_OFFSET;
 
-    copyArgvEnvToProcess(newArgv, newEnvp);
+    //printkf("image sizeInMemory:%d\n", sizeInMemory);
+
+    initializeProgramBreak(process, sizeInMemory);
+
+    char* pAddressStackPage = getPageFrame4M();
+    char* vAddressStackPage = (char *) (USER_STACK - PAGESIZE_4M);
+    mapMemory(process, PAGESIZE_4M, (uint32)vAddressStackPage, (uint32)pAddressStackPage, NULL, TRUE);
+
+    copyArgvEnvToProcess(USER_STACK - SIZE_2MB, elfData, newArgv, newEnvp);
 
     destroyStringArray(newArgv);
     destroyStringArray(newEnvp);
@@ -323,13 +411,14 @@ Process* createUserProcessEx(const char* name, uint32 processId, uint32 threadId
     thread->regs.ds = selector;
     thread->regs.es = selector;
     thread->regs.fs = selector;
-    thread->regs.gs = selector;
+    thread->regs.gs = selector; //48 | 3;
 
-    thread->regs.esp = stackp;
+    //Since stack grows backwards. Bottom 2MB of the page is reserved for the stack. Upper half is filled with argv, env, auxv.
+    uint32 stackPointer = USER_STACK - SIZE_2MB - 4;
 
-    char* p_addr = getPageFrame4M();
-    char* v_addr = (char *) (USER_STACK - PAGESIZE_4M);
-    addPageToPd(process->pd, v_addr, p_addr, PG_USER);
+    thread->regs.esp = stackPointer;
+
+
 
     thread->kstack.ss0 = 0x10;
     uint8* stack = (uint8*)kmalloc(KERN_STACK_SIZE);
@@ -348,6 +437,8 @@ Process* createUserProcessEx(const char* name, uint32 processId, uint32 threadId
     if (elfData)
     {
         uint32 startLocation = loadElf((char*)elfData);
+
+        //printkf("process start location:%x\n", startLocation);
 
         if (startLocation > 0)
         {
@@ -460,7 +551,7 @@ void destroyProcess(Process* process)
 
     Debug_PrintF("destroying process %d\n", process->pid);
 
-    destroyPd(process->pd);
+    destroyPd(process);
     kfree(process);
 }
 
