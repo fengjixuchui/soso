@@ -141,7 +141,7 @@
 #define __NR_setfsgid		1139
 #define __NR__llseek		43 //1140
 #define __NR_getdents		20 //41
-#define __NR__newselect		1142
+#define __NR__newselect		44 //1142
 #define __NR_flock		1143
 #define __NR_msync		1144
 #define __NR_readv		38 //1145
@@ -173,7 +173,7 @@
 #define __NR_getresgid		1171
 #define __NR_prctl              1172
 #define __NR_rt_sigreturn	1173
-#define __NR_rt_sigaction	1174
+#define __NR_rt_sigaction	29 //1174
 #define __NR_rt_sigprocmask	1175
 #define __NR_rt_sigpending	1176
 #define __NR_rt_sigtimedwait	1177
@@ -387,18 +387,18 @@
 #define __NR_rseq		1386
 #define __NR_semget		1393
 #define __NR_semctl		1394
-#define __NR_shmget		1395
-#define __NR_shmctl		1396
-#define __NR_shmat		1397
-#define __NR_shmdt		1398
+#define __NR_shmget		50 //1395
+#define __NR_shmctl		53 //1396
+#define __NR_shmat		51 //1397
+#define __NR_shmdt		52 //1398
 #define __NR_msgget		1399
 #define __NR_msgsnd		1400
 #define __NR_msgrcv		1401
 #define __NR_msgctl		1402
-#define __NR_clock_gettime64	1403
-#define __NR_clock_settime64	1404
+#define __NR_clock_gettime64	47 //1403
+#define __NR_clock_settime64	48 //1404
 #define __NR_clock_adjtime64	1405
-#define __NR_clock_getres_time64 1406
+#define __NR_clock_getres_time64 49 //1406
 #define __NR_clock_nanosleep_time64 1407
 #define __NR_timer_gettime64	1408
 #define __NR_timer_settime64	1409
@@ -428,3 +428,6 @@
 #define __NR_pidfd_open		1434
 #define __NR_clone3		1435
 
+//soso
+#define __NR_posix_openpt		35
+#define __NR_ptsname_r		36

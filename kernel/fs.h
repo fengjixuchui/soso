@@ -3,21 +3,27 @@
 
 #include "common.h"
 
+#define O_ACCMODE   0003
+#define O_RDONLY    00
+#define O_WRONLY    01
+#define O_RDWR      02
+#define CHECK_ACCESS(flags, test) ((flags & O_ACCMODE) == test)
+
 typedef enum FileType
 {
-    FT_File               = 1,
-    FT_CharacterDevice    = 2,
-    FT_BlockDevice        = 3,
-    FT_Pipe               = 4,
-    FT_SymbolicLink       = 5,
-    FT_Directory          = 128,
-    FT_MountPoint         = 256
+    FT_FILE               = 1,
+    FT_CHARACTER_DEVICE   = 2,
+    FT_BLOCK_DEVICE       = 3,
+    FT_PIPE               = 4,
+    FT_SYMBOLIC_LINK      = 5,
+    FT_DIRECTORY          = 128,
+    FT_MOUNT_POINT        = 256
 } FileType;
 
 typedef enum IoctlCommand
 {
-    IC_GetSectorSizeInBytes,
-    IC_GetSectorCount,
+    IC_GET_SECTOR_SIZE_BYTES,
+    IC_GET_SECTOR_COUNT,
 } IoctlCommand;
 
 typedef struct FileSystem FileSystem;
@@ -29,42 +35,45 @@ typedef struct File File;
 
 struct stat;
 
-typedef int32 (*ReadWriteFunction)(File* file, uint32 size, uint8* buffer);
-typedef int32 (*ReadWriteBlockFunction)(FileSystemNode* node, uint32 blockNumber, uint32 count, uint8* buffer);
-typedef BOOL (*OpenFunction)(File* file, uint32 flags);
+typedef int32_t (*ReadWriteFunction)(File* file, uint32_t size, uint8_t* buffer);
+typedef BOOL (*ReadWriteTestFunction)(File* file);
+typedef int32_t (*ReadWriteBlockFunction)(FileSystemNode* node, uint32_t block_number, uint32_t count, uint8_t* buffer);
+typedef BOOL (*OpenFunction)(File* file, uint32_t flags);
 typedef void (*CloseFunction)(File* file);
-typedef int32 (*IoctlFunction)(File *file, int32 request, void * argp);
-typedef int32 (*LseekFunction)(File *file, int32 offset, int32 whence);
-typedef int32 (*FtruncateFunction)(File *file, int32 length);
-typedef int32 (*StatFunction)(FileSystemNode *node, struct stat *buf);
-typedef FileSystemDirent * (*ReadDirFunction)(FileSystemNode*,uint32);
+typedef int32_t (*IoctlFunction)(File *file, int32_t request, void * argp);
+typedef int32_t (*LseekFunction)(File *file, int32_t offset, int32_t whence);
+typedef int32_t (*FtruncateFunction)(File *file, int32_t length);
+typedef int32_t (*StatFunction)(FileSystemNode *node, struct stat *buf);
+typedef FileSystemDirent * (*ReadDirFunction)(FileSystemNode*,uint32_t);
 typedef FileSystemNode * (*FindDirFunction)(FileSystemNode*,char *name);
-typedef BOOL (*MkDirFunction)(FileSystemNode* node, const char *name, uint32 flags);
-typedef void* (*MmapFunction)(File* file, uint32 size, uint32 offset, uint32 flags);
-typedef BOOL (*MunmapFunction)(File* file, void* address, uint32 size);
+typedef BOOL (*MkDirFunction)(FileSystemNode* node, const char *name, uint32_t flags);
+typedef void* (*MmapFunction)(File* file, uint32_t size, uint32_t offset, uint32_t flags);
+typedef BOOL (*MunmapFunction)(File* file, void* address, uint32_t size);
 
-typedef BOOL (*MountFunction)(const char* sourcePath, const char* targetPath, uint32 flags, void *data);
+typedef BOOL (*MountFunction)(const char* source_path, const char* target_path, uint32_t flags, void *data);
 
 typedef struct FileSystem
 {
     char name[32];
-    MountFunction checkMount;
+    MountFunction check_mount;
     MountFunction mount;
 } FileSystem;
 
 typedef struct FileSystemNode
 {
     char name[128];
-    uint32 mask;
-    uint32 userId;
-    uint32 groupId;
-    uint32 nodeType;
-    uint32 inode;
-    uint32 length;
-    ReadWriteBlockFunction readBlock;
-    ReadWriteBlockFunction writeBlock;
+    uint32_t mask;
+    uint32_t user_id;
+    uint32_t group_id;
+    uint32_t node_type;
+    uint32_t inode;
+    uint32_t length;
+    ReadWriteBlockFunction read_block;
+    ReadWriteBlockFunction write_block;
     ReadWriteFunction read;
     ReadWriteFunction write;
+    ReadWriteTestFunction read_test_ready;
+    ReadWriteTestFunction write_test_ready;
     OpenFunction open;
     CloseFunction close;
     IoctlFunction ioctl;
@@ -76,19 +85,19 @@ typedef struct FileSystemNode
     MkDirFunction mkdir;
     MmapFunction mmap;
     MunmapFunction munmap;
-    FileSystemNode *firstChild;
-    FileSystemNode *nextSibling;
+    FileSystemNode *first_child;
+    FileSystemNode *next_sibling;
     FileSystemNode *parent;
-    FileSystemNode *mountPoint;//only used in mounts
-    FileSystemNode *mountSource;//only used in mounts
-    void* privateNodeData;
+    FileSystemNode *mount_point;//only used in mounts
+    FileSystemNode *mount_source;//only used in mounts
+    void* private_node_data;
 } FileSystemNode;
 
 typedef struct FileSystemDirent
 {
     char name[128];
-    FileType fileType;
-    uint32 inode;
+    FileType file_type;
+    uint32_t inode;
 } FileSystemDirent;
 
 //Per open
@@ -97,60 +106,60 @@ typedef struct File
     FileSystemNode* node;
     Process* process;
     Thread* thread;
-    int32 fd;
-    int32 offset;
-    void* privateData;
+    int32_t fd;
+    uint32_t flags;
+    int32_t offset;
+    void* private_data;
 } File;
 
 struct stat
 {
-    uint16/*dev_t      */ st_dev;     /* ID of device containing file */
-    uint16/*ino_t      */ st_ino;     /* inode number */
-    uint32/*mode_t     */ st_mode;    /* protection */
-    uint16/*nlink_t    */ st_nlink;   /* number of hard links */
-    uint16/*uid_t      */ st_uid;     /* user ID of owner */
-    uint16/*gid_t      */ st_gid;     /* group ID of owner */
-    uint16/*dev_t      */ st_rdev;    /* device ID (if special file) */
-    uint32/*off_t      */ st_size;    /* total size, in bytes */
+    uint16_t/*dev_t      */ st_dev;     /* ID of device containing file */
+    uint16_t/*ino_t      */ st_ino;     /* inode number */
+    uint32_t/*mode_t     */ st_mode;    /* protection */
+    uint16_t/*nlink_t    */ st_nlink;   /* number of hard links */
+    uint16_t/*uid_t      */ st_uid;     /* user ID of owner */
+    uint16_t/*gid_t      */ st_gid;     /* group ID of owner */
+    uint16_t/*dev_t      */ st_rdev;    /* device ID (if special file) */
+    uint32_t/*off_t      */ st_size;    /* total size, in bytes */
 
-    uint32/*time_t     */ st_atime;
-    uint32/*long       */ st_spare1;
-    uint32/*time_t     */ st_mtime;
-    uint32/*long       */ st_spare2;
-    uint32/*time_t     */ st_ctime;
-    uint32/*long       */ st_spare3;
-    uint32/*blksize_t  */ st_blksize;
-    uint32/*blkcnt_t   */ st_blocks;
-    uint32/*long       */ st_spare4[2];
+    uint32_t/*time_t     */ st_atime;
+    uint32_t/*long       */ st_spare1;
+    uint32_t/*time_t     */ st_mtime;
+    uint32_t/*long       */ st_spare2;
+    uint32_t/*time_t     */ st_ctime;
+    uint32_t/*long       */ st_spare3;
+    uint32_t/*blksize_t  */ st_blksize;
+    uint32_t/*blkcnt_t   */ st_blocks;
+    uint32_t/*long       */ st_spare4[2];
 };
 
 
-uint32 read_fs(File* file, uint32 size, uint8* buffer);
-uint32 write_fs(File* file, uint32 size, uint8* buffer);
-File* open_fs(FileSystemNode* node, uint32 flags);
-File* open_fs_forProcess(Thread* thread, FileSystemNode* node, uint32 flags);
-void close_fs(File* file);
-int32 ioctl_fs(File* file, int32 request, void* argp);
-int32 lseek_fs(File* file, int32 offset, int32 whence);
-int32 ftruncate_fs(File* file, int32 length);
-int32 stat_fs(FileSystemNode *node, struct stat *buf);
-FileSystemDirent* readdir_fs(FileSystemNode* node, uint32 index);
-FileSystemNode* finddir_fs(FileSystemNode* node, char* name);
-BOOL mkdir_fs(FileSystemNode *node, const char* name, uint32 flags);
-void* mmap_fs(File* file, uint32 size, uint32 offset, uint32 flags);
-BOOL munmap_fs(File* file, void* address, uint32 size);
-int getFileSystemNodePath(FileSystemNode* node, char* buffer, uint32 bufferSize);
-BOOL resolvePath(const char* path, char* buffer, int bufferSize);
+uint32_t fs_read(File* file, uint32_t size, uint8_t* buffer);
+uint32_t fs_write(File* file, uint32_t size, uint8_t* buffer);
+File* fs_open(FileSystemNode* node, uint32_t flags);
+File* fs_open_for_process(Thread* thread, FileSystemNode* node, uint32_t flags);
+void fs_close(File* file);
+int32_t fs_ioctl(File* file, int32_t request, void* argp);
+int32_t fs_lseek(File* file, int32_t offset, int32_t whence);
+int32_t fs_ftruncate(File* file, int32_t length);
+int32_t fs_stat(FileSystemNode *node, struct stat *buf);
+FileSystemDirent* fs_readdir(FileSystemNode* node, uint32_t index);
+FileSystemNode* fs_finddir(FileSystemNode* node, char* name);
+BOOL fs_mkdir(FileSystemNode *node, const char* name, uint32_t flags);
+void* fs_mmap(File* file, uint32_t size, uint32_t offset, uint32_t flags);
+BOOL fs_munmap(File* file, void* address, uint32_t size);
+int fs_get_node_path(FileSystemNode* node, char* buffer, uint32_t buffer_size);
+BOOL fs_resolve_path(const char* path, char* buffer, int buffer_size);
 
-void initializeVFS();
-FileSystemNode* getFileSystemRootNode();
-FileSystemNode* getFileSystemNode(const char* path);
-FileSystemNode* getFileSystemNodeAbsoluteOrRelative(const char* path, Process* process);
-FileSystemNode* getFileSystemNodeRelativeToNode(const char* path, FileSystemNode* relativeTo);
-void copyFileDescriptors(Process* fromProcess, Process* toProcess);
+void fs_initialize();
+FileSystemNode* fs_get_root_node();
+FileSystemNode* fs_get_node(const char* path);
+FileSystemNode* fs_get_node_absolute_or_relative(const char* path, Process* process);
+FileSystemNode* fs_get_node_relative_to_node(const char* path, FileSystemNode* relative_to);
 
-BOOL registerFileSystem(FileSystem* fs);
-BOOL mountFileSystem(const char *source, const char *target, const char *fsType, uint32 flags, void *data);
-BOOL checkMountFileSystem(const char *source, const char *target, const char *fsType, uint32 flags, void *data);
+BOOL fs_register(FileSystem* fs);
+BOOL fs_mount(const char *source, const char *target, const char *fsType, uint32_t flags, void *data);
+BOOL fs_check_mount(const char *source, const char *target, const char *fsType, uint32_t flags, void *data);
 
 #endif

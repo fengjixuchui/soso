@@ -5,6 +5,6 @@
 #include "fs.h"
 #include "common.h"
 
-void initializeSystemFS();
+void systemfs_initialize();
 
 #endif // SYSTEMFS_H

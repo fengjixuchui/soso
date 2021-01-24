@@ -3,10 +3,11 @@
 
 #include "common.h"
 
-typedef int32 Spinlock;
+typedef int32_t Spinlock;
 
-void Spinlock_Init(Spinlock* spinlock);
-void Spinlock_Lock(Spinlock* spinlock);
-void Spinlock_Unlock(Spinlock* spinlock);
+void spinlock_init(Spinlock* spinlock);
+void spinlock_lock(Spinlock* spinlock);
+BOOL spinlock_try_lock(Spinlock* spinlock);
+void spinlock_unlock(Spinlock* spinlock);
 
 #endif // SPINLOCK_H

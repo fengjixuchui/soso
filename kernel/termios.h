@@ -150,7 +150,7 @@ struct termios
 
 // c_lflag bits
 #define ISIG        0000001
-#define ICANON        0000002
+#define ICANON        0000002 //canonical mode (cooked mode) - opposite of raw mode
 #define XCASE        0000004
 #define ECHO        0000010
 #define ECHOE        0000020
@@ -184,12 +184,15 @@ struct termios
 #define        TCSAFLUSH        2
 
 //ioctl interface
-//TODO: refactor these values to be compatible with the standard ones 0x54..
-#define TCGETS		0x5001
-#define TCSETS		0x5002
-#define TCSETSW		0x5003
-#define TCSETSF		0x5004
+#define TCGETS		0x5401
+#define TCSETS		0x5402
+#define TCSETSW		0x5403
+#define TCSETSF		0x5404
 
 #define TIOCGWINSZ	0x5413
+#define TIOCSWINSZ	0x5414
+
+#define TIOCGPGRP	0x540F
+#define TIOCSPGRP	0x5410
 
 #endif // TERMIOS_H

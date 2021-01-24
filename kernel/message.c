@@ -3,40 +3,40 @@
 #include "fifobuffer.h"
 
 
-void sendMesage(Thread* thread, SosoMessage* message)
+void message_send(Thread* thread, SosoMessage* message)
 {
-    Spinlock_Lock(&(thread->messageQueueLock));
+    spinlock_lock(&(thread->message_queue_lock));
 
-    FifoBuffer_enqueue(thread->messageQueue, (uint8*)message, sizeof(SosoMessage));
+    fifobuffer_enqueue(thread->message_queue, (uint8_t*)message, sizeof(SosoMessage));
 
-    Spinlock_Unlock(&(thread->messageQueueLock));
+    spinlock_unlock(&(thread->message_queue_lock));
 }
 
-uint32 getMessageQueueCount(Thread* thread)
+uint32_t message_get_queue_count(Thread* thread)
 {
     int result = 0;
 
-    Spinlock_Lock(&(thread->messageQueueLock));
+    spinlock_lock(&(thread->message_queue_lock));
 
-    result = FifoBuffer_getSize(thread->messageQueue) / sizeof(SosoMessage);
+    result = fifobuffer_get_size(thread->message_queue) / sizeof(SosoMessage);
 
-    Spinlock_Unlock(&(thread->messageQueueLock));
+    spinlock_unlock(&(thread->message_queue_lock));
 
     return result;
 }
 
 //returns remaining message count
-int32 getNextMessage(Thread* thread, SosoMessage* message)
+int32_t message_get_next(Thread* thread, SosoMessage* message)
 {
-    uint32 result = -1;
+    uint32_t result = -1;
 
-    Spinlock_Lock(&(thread->messageQueueLock));
+    spinlock_lock(&(thread->message_queue_lock));
 
-    result = FifoBuffer_getSize(thread->messageQueue) / sizeof(SosoMessage);
+    result = fifobuffer_get_size(thread->message_queue) / sizeof(SosoMessage);
 
     if (result > 0)
     {
-        FifoBuffer_dequeue(thread->messageQueue, (uint8*)message, sizeof(SosoMessage));
+        fifobuffer_dequeue(thread->message_queue, (uint8_t*)message, sizeof(SosoMessage));
 
         --result;
     }
@@ -45,7 +45,7 @@ int32 getNextMessage(Thread* thread, SosoMessage* message)
         result = -1;
     }
 
-    Spinlock_Unlock(&(thread->messageQueueLock));
+    spinlock_unlock(&(thread->message_queue_lock));
 
     return result;
 }

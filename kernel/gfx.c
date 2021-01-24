@@ -2,92 +2,84 @@
 #include "vmm.h"
 #include "serial.h"
 #include "framebuffer.h"
-#include "debugprint.h"
+#include "log.h"
 
-static uint32 gWidth = 0;
-static uint32 gHeight = 0;
-static uint32 gBytesPerPixel = 0;
-static uint32 gPitch = 0;
-static uint32* gPixels = NULL;
+static uint32_t g_width = 0;
+static uint32_t g_height = 0;
+static uint32_t g_bytes_per_pixel = 0;
+static uint32_t g_pitch = 0;
+static uint32_t* g_pixels = NULL;
 
 extern char _binary_font_psf_start;
 extern char _binary_font_psf_end;
 
-uint16 *gUnicode = NULL;
-
-static int gLineCount = 10;
-static int gColumnCount = 10;
-static uint16 gCurrentLine = 0;
-static uint16 gCurrentColumn = 0;
+static uint16_t *g_unicode = NULL;
 
 #define LINE_HEIGHT 16
 
-void Gfx_Initialize(uint32* pixels, uint32 width, uint32 height, uint32 bytesPerPixel, uint32 pitch)
+void gfx_initialize(uint32_t* pixels, uint32_t width, uint32_t height, uint32_t bytes_per_pixel, uint32_t pitch)
 {
-    char* p_address = (char*)pixels;
+    uint32_t p_address = (uint32_t)pixels;
     char* v_address = (char*)GFX_MEMORY;
 
     //Usually physical and virtual are the same here but of course they don't have to
 
-    gPixels = (uint32*)v_address;
-    gWidth = width;
-    gHeight = height;
-    gBytesPerPixel = bytesPerPixel;
-    gPitch = pitch;
+    g_pixels = (uint32_t*)v_address;
+    g_width = width;
+    g_height = height;
+    g_bytes_per_pixel = bytes_per_pixel;
+    g_pitch = pitch;
 
-    gLineCount = gHeight / LINE_HEIGHT;
-    gColumnCount = gWidth / 8;
+    uint32_t size_bytes = g_width * g_height * g_bytes_per_pixel;
+    uint32_t needed_page_count = size_bytes / PAGESIZE_4K;
 
-
-    BOOL success = addPageToPd(gKernelPageDirectory, v_address, p_address, 0);
-
-    if (success)
+    for (uint32_t i = 0; i < needed_page_count; ++i)
     {
-        for (int y = 0; y < gHeight; ++y)
+        uint32_t offset = i * PAGESIZE_4K;
+
+        vmm_add_page_to_pd(v_address + offset, p_address + offset, 0);
+    }
+
+    for (int y = 0; y < g_height; ++y)
+    {
+        for (int x = 0; x < g_width; ++x)
         {
-            for (int x = 0; x < gWidth; ++x)
-            {
-                gPixels[x + y * gWidth] = 0xFFFFFFFF;
-            }
+            g_pixels[x + y * g_width] = 0xFFFFFFFF;
         }
     }
-    else
-    {
-        Debug_PrintF("Gfx initialization failed!\n");
-    }
 
-    initializeFrameBuffer((uint8*)p_address, (uint8*)v_address);
+    framebuffer_initialize((uint8_t*)p_address, (uint8_t*)v_address);
 }
 
 #define PSF_FONT_MAGIC 0x864ab572
 
 typedef struct {
-    uint32 magic;         /* magic bytes to identify PSF */
-    uint32 version;       /* zero */
-    uint32 headersize;    /* offset of bitmaps in file, 32 */
-    uint32 flags;         /* 0 if there's no unicode table */
-    uint32 numglyph;      /* number of glyphs */
-    uint32 bytesperglyph; /* size of each glyph */
-    uint32 height;        /* height in pixels */
-    uint32 width;         /* width in pixels */
+    uint32_t magic;         /* magic bytes to identify PSF */
+    uint32_t version;       /* zero */
+    uint32_t headersize;    /* offset of bitmaps in file, 32 */
+    uint32_t flags;         /* 0 if there's no unicode table */
+    uint32_t numglyph;      /* number of glyphs */
+    uint32_t bytesperglyph; /* size of each glyph */
+    uint32_t height;        /* height in pixels */
+    uint32_t width;         /* width in pixels */
 } PSF_font;
 
 //From Osdev PC Screen Font (The font used here is free to use)
-void Gfx_PutCharAt(
+void gfx_put_char_at(
     /* note that this is int, not char as it's a unicode character */
     unsigned short int c,
     /* cursor position on screen, in characters not in pixels */
     int cx, int cy,
     /* foreground and background colors, say 0xFFFFFF and 0x000000 */
-    uint32 fg, uint32 bg)
+    uint32_t fg, uint32_t bg)
 {
     /* cast the address to PSF header struct */
     PSF_font *font = (PSF_font*)&_binary_font_psf_start;
     /* we need to know how many bytes encode one row */
     int bytesperline=(font->width+7)/8;
     /* unicode translation */
-    if(gUnicode != NULL) {
-        c = gUnicode[c];
+    if(g_unicode != NULL) {
+        c = g_unicode[c];
     }
     /* get the glyph for the character. If there's no
        glyph for a given character, we'll display the first glyph. */
@@ -98,7 +90,7 @@ void Gfx_PutCharAt(
     /* calculate the upper left corner on screen where we want to display.
        we only do this once, and adjust the offset later. This is faster. */
     int offs =
-        (cy * font->height * gPitch) +
+        (cy * font->height * g_pitch) +
         (cx * (font->width+1) * 4);
     /* finally display pixels according to the bitmap */
     int x,y, line,mask;
@@ -111,11 +103,11 @@ void Gfx_PutCharAt(
         {
             if (c == 0)
             {
-                *((uint32*)((uint8*)gPixels + line)) = bg;
+                *((uint32_t*)((uint8_t*)g_pixels + line)) = bg;
             }
             else
             {
-                *((uint32*)((uint8*)gPixels + line)) = ((int)*glyph) & (mask) ? fg : bg;
+                *((uint32_t*)((uint8_t*)g_pixels + line)) = ((int)*glyph) & (mask) ? fg : bg;
             }
 
             /* adjust to the next pixel */
@@ -124,55 +116,37 @@ void Gfx_PutCharAt(
         }
         /* adjust to the next line */
         glyph += bytesperline;
-        offs  += gPitch;
+        offs  += g_pitch;
     }
 }
 
-void Gfx_FlushFromTty(Tty* tty)
+uint8_t* gfx_get_video_memory()
 {
-    for (uint32 r = 0; r < tty->lineCount; ++r)
+    return (uint8_t*)g_pixels;
+}
+
+uint16_t gfx_get_width()
+{
+    return g_width;
+}
+
+uint16_t gfx_get_height()
+{
+    return g_height;
+}
+
+uint16_t gfx_get_bytes_per_pixel()
+{
+    return g_bytes_per_pixel;
+}
+
+void gfx_fill(uint32_t color)
+{
+    for (uint32_t y = 0; y < g_height; ++y)
     {
-        for (uint32 c = 0; c < tty->columnCount; ++c)
+        for (uint32_t x = 0; x < g_width; ++x)
         {
-            uint8* ttyPos = tty->buffer + (r * tty->columnCount + c) * 2;
-
-            uint8 chr = ttyPos[0];
-            uint8 color = ttyPos[1];
-
-            Gfx_PutCharAt(chr, c, r, 0, 0xFFFFFFFF);
-        }
-    }
-
-    //Screen_MoveCursor(tty->currentLine, tty->currentColumn);
-}
-
-uint8* Gfx_GetVideoMemory()
-{
-    return (uint8*)gPixels;
-}
-
-uint16 Gfx_GetWidth()
-{
-    return gWidth;
-}
-
-uint16 Gfx_GetHeight()
-{
-    return gHeight;
-}
-
-uint16 Gfx_GetBytesPerPixel()
-{
-    return gBytesPerPixel;
-}
-
-void Gfx_Fill(uint32 color)
-{
-    for (uint32 y = 0; y < gHeight; ++y)
-    {
-        for (uint32 x = 0; x < gWidth; ++x)
-        {
-            gPixels[x + y * gWidth] = color;
+            g_pixels[x + y * g_width] = color;
         }
     }
 }

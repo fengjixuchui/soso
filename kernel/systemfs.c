@@ -3,141 +3,140 @@
 #include "fs.h"
 #include "alloc.h"
 #include "device.h"
-#include "screen.h"
 #include "vmm.h"
 #include "process.h"
 
-static FileSystemNode* gSystemFsRoot = NULL;
+static FileSystemNode* g_systemfs_root = NULL;
 
 
-static BOOL systemfs_open(File *file, uint32 flags);
-static FileSystemDirent *systemfs_readdir(FileSystemNode *node, uint32 index);
+static BOOL systemfs_open(File *file, uint32_t flags);
+static FileSystemDirent *systemfs_readdir(FileSystemNode *node, uint32_t index);
 static FileSystemNode *systemfs_finddir(FileSystemNode *node, char *name);
 
-static void createNodes();
+static void create_nodes();
 
-static FileSystemDirent gDirent;
+static FileSystemDirent g_dirent;
 
-static int32 systemfs_read_meminfo_totalpages(File *file, uint32 size, uint8 *buffer);
-static int32 systemfs_read_meminfo_usedpages(File *file, uint32 size, uint8 *buffer);
-static BOOL systemfs_open_threads_dir(File *file, uint32 flags);
+static int32_t systemfs_read_meminfo_totalpages(File *file, uint32_t size, uint8_t *buffer);
+static int32_t systemfs_read_meminfo_usedpages(File *file, uint32_t size, uint8_t *buffer);
+static BOOL systemfs_open_threads_dir(File *file, uint32_t flags);
 static void systemfs_close_threads_dir(File *file);
 
-void initializeSystemFS()
+void systemfs_initialize()
 {
-    gSystemFsRoot = kmalloc(sizeof(FileSystemNode));
-    memset((uint8*)gSystemFsRoot, 0, sizeof(FileSystemNode));
+    g_systemfs_root = kmalloc(sizeof(FileSystemNode));
+    memset((uint8_t*)g_systemfs_root, 0, sizeof(FileSystemNode));
 
-    gSystemFsRoot->nodeType = FT_Directory;
+    g_systemfs_root->node_type = FT_DIRECTORY;
 
-    FileSystemNode* rootFs = getFileSystemRootNode();
+    FileSystemNode* root_fs = fs_get_root_node();
 
-    mkdir_fs(rootFs, "system", 0);
+    fs_mkdir(root_fs, "system", 0);
 
-    FileSystemNode* systemNode = finddir_fs(rootFs, "system");
+    FileSystemNode* system_node = fs_finddir(root_fs, "system");
 
-    if (systemNode)
+    if (system_node)
     {
-        systemNode->nodeType |= FT_MountPoint;
-        systemNode->mountPoint = gSystemFsRoot;
-        gSystemFsRoot->parent = systemNode->parent;
-        strcpy(gSystemFsRoot->name, systemNode->name);
+        system_node->node_type |= FT_MOUNT_POINT;
+        system_node->mount_point = g_systemfs_root;
+        g_systemfs_root->parent = system_node->parent;
+        strcpy(g_systemfs_root->name, system_node->name);
     }
     else
     {
         PANIC("Could not create /system !");
     }
 
-    gSystemFsRoot->open = systemfs_open;
-    gSystemFsRoot->finddir = systemfs_finddir;
-    gSystemFsRoot->readdir = systemfs_readdir;
+    g_systemfs_root->open = systemfs_open;
+    g_systemfs_root->finddir = systemfs_finddir;
+    g_systemfs_root->readdir = systemfs_readdir;
 
-    createNodes();
+    create_nodes();
 }
 
-static void createNodes()
+static void create_nodes()
 {
-    FileSystemNode* nodeMemInfo = kmalloc(sizeof(FileSystemNode));
+    FileSystemNode* node_mem_info = kmalloc(sizeof(FileSystemNode));
 
-    memset((uint8*)nodeMemInfo, 0, sizeof(FileSystemNode));
+    memset((uint8_t*)node_mem_info, 0, sizeof(FileSystemNode));
 
-    strcpy(nodeMemInfo->name, "meminfo");
-    nodeMemInfo->nodeType = FT_Directory;
-    nodeMemInfo->open = systemfs_open;
-    nodeMemInfo->finddir = systemfs_finddir;
-    nodeMemInfo->readdir = systemfs_readdir;
-    nodeMemInfo->parent = gSystemFsRoot;
+    strcpy(node_mem_info->name, "meminfo");
+    node_mem_info->node_type = FT_DIRECTORY;
+    node_mem_info->open = systemfs_open;
+    node_mem_info->finddir = systemfs_finddir;
+    node_mem_info->readdir = systemfs_readdir;
+    node_mem_info->parent = g_systemfs_root;
 
-    gSystemFsRoot->firstChild = nodeMemInfo;
+    g_systemfs_root->first_child = node_mem_info;
 
-    FileSystemNode* nodeMemInfoTotalPages = kmalloc(sizeof(FileSystemNode));
-    memset((uint8*)nodeMemInfoTotalPages, 0, sizeof(FileSystemNode));
-    strcpy(nodeMemInfoTotalPages->name, "totalpages");
-    nodeMemInfoTotalPages->nodeType = FT_File;
-    nodeMemInfoTotalPages->open = systemfs_open;
-    nodeMemInfoTotalPages->read = systemfs_read_meminfo_totalpages;
-    nodeMemInfoTotalPages->parent = nodeMemInfo;
+    FileSystemNode* node_mem_info_total_pages = kmalloc(sizeof(FileSystemNode));
+    memset((uint8_t*)node_mem_info_total_pages, 0, sizeof(FileSystemNode));
+    strcpy(node_mem_info_total_pages->name, "totalpages");
+    node_mem_info_total_pages->node_type = FT_FILE;
+    node_mem_info_total_pages->open = systemfs_open;
+    node_mem_info_total_pages->read = systemfs_read_meminfo_totalpages;
+    node_mem_info_total_pages->parent = node_mem_info;
 
-    nodeMemInfo->firstChild = nodeMemInfoTotalPages;
+    node_mem_info->first_child = node_mem_info_total_pages;
 
-    FileSystemNode* nodeMemInfoUsedPages = kmalloc(sizeof(FileSystemNode));
-    memset((uint8*)nodeMemInfoUsedPages, 0, sizeof(FileSystemNode));
-    strcpy(nodeMemInfoUsedPages->name, "usedpages");
-    nodeMemInfoUsedPages->nodeType = FT_File;
-    nodeMemInfoUsedPages->open = systemfs_open;
-    nodeMemInfoUsedPages->read = systemfs_read_meminfo_usedpages;
-    nodeMemInfoUsedPages->parent = nodeMemInfo;
+    FileSystemNode* node_mem_info_used_pages = kmalloc(sizeof(FileSystemNode));
+    memset((uint8_t*)node_mem_info_used_pages, 0, sizeof(FileSystemNode));
+    strcpy(node_mem_info_used_pages->name, "usedpages");
+    node_mem_info_used_pages->node_type = FT_FILE;
+    node_mem_info_used_pages->open = systemfs_open;
+    node_mem_info_used_pages->read = systemfs_read_meminfo_usedpages;
+    node_mem_info_used_pages->parent = node_mem_info;
 
-    nodeMemInfoTotalPages->nextSibling = nodeMemInfoUsedPages;
-
-    //
-
-    FileSystemNode* nodeThreads = kmalloc(sizeof(FileSystemNode));
-    memset((uint8*)nodeThreads, 0, sizeof(FileSystemNode));
-
-    strcpy(nodeThreads->name, "threads");
-    nodeThreads->nodeType = FT_Directory;
-    nodeThreads->open = systemfs_open_threads_dir;
-    nodeThreads->close = systemfs_close_threads_dir;
-    nodeThreads->finddir = systemfs_finddir;
-    nodeThreads->readdir = systemfs_readdir;
-    nodeThreads->parent = gSystemFsRoot;
-
-    nodeMemInfo->nextSibling = nodeThreads;
+    node_mem_info_total_pages->next_sibling = node_mem_info_used_pages;
 
     //
 
-    FileSystemNode* nodePipes = kmalloc(sizeof(FileSystemNode));
-    memset((uint8*)nodePipes, 0, sizeof(FileSystemNode));
+    FileSystemNode* node_threads = kmalloc(sizeof(FileSystemNode));
+    memset((uint8_t*)node_threads, 0, sizeof(FileSystemNode));
 
-    strcpy(nodePipes->name, "pipes");
-    nodePipes->nodeType = FT_Directory;
-    nodePipes->parent = gSystemFsRoot;
+    strcpy(node_threads->name, "threads");
+    node_threads->node_type = FT_DIRECTORY;
+    node_threads->open = systemfs_open_threads_dir;
+    node_threads->close = systemfs_close_threads_dir;
+    node_threads->finddir = systemfs_finddir;
+    node_threads->readdir = systemfs_readdir;
+    node_threads->parent = g_systemfs_root;
 
-    nodeThreads->nextSibling = nodePipes;
+    node_mem_info->next_sibling = node_threads;
 
     //
 
-    FileSystemNode* nodeShm = kmalloc(sizeof(FileSystemNode));
-    memset((uint8*)nodeShm, 0, sizeof(FileSystemNode));
+    FileSystemNode* node_pipes = kmalloc(sizeof(FileSystemNode));
+    memset((uint8_t*)node_pipes, 0, sizeof(FileSystemNode));
 
-    strcpy(nodeShm->name, "shm");
-    nodeShm->nodeType = FT_Directory;
-    nodeShm->parent = gSystemFsRoot;
+    strcpy(node_pipes->name, "pipes");
+    node_pipes->node_type = FT_DIRECTORY;
+    node_pipes->parent = g_systemfs_root;
 
-    nodePipes->nextSibling = nodeShm;
+    node_threads->next_sibling = node_pipes;
+
+    //
+
+    FileSystemNode* node_shm = kmalloc(sizeof(FileSystemNode));
+    memset((uint8_t*)node_shm, 0, sizeof(FileSystemNode));
+
+    strcpy(node_shm->name, "shm");
+    node_shm->node_type = FT_DIRECTORY;
+    node_shm->parent = g_systemfs_root;
+
+    node_pipes->next_sibling = node_shm;
 }
 
-static BOOL systemfs_open(File *file, uint32 flags)
+static BOOL systemfs_open(File *file, uint32_t flags)
 {
     return TRUE;
 }
 
-static FileSystemDirent *systemfs_readdir(FileSystemNode *node, uint32 index)
+static FileSystemDirent *systemfs_readdir(FileSystemNode *node, uint32_t index)
 {
     int counter = 0;
 
-    FileSystemNode* child = node->firstChild;
+    FileSystemNode* child = node->first_child;
 
     //Screen_PrintF("systemfs_readdir-main:%s index:%d\n", node->name, index);
 
@@ -146,15 +145,15 @@ static FileSystemDirent *systemfs_readdir(FileSystemNode *node, uint32 index)
         //Screen_PrintF("systemfs_readdir-child:%s\n", child->name);
         if (counter == index)
         {
-            strcpy(gDirent.name, child->name);
-            gDirent.fileType = child->nodeType;
+            strcpy(g_dirent.name, child->name);
+            g_dirent.file_type = child->node_type;
 
-            return &gDirent;
+            return &g_dirent;
         }
 
         ++counter;
 
-        child = child->nextSibling;
+        child = child->next_sibling;
     }
 
     return NULL;
@@ -162,32 +161,29 @@ static FileSystemDirent *systemfs_readdir(FileSystemNode *node, uint32 index)
 
 static FileSystemNode *systemfs_finddir(FileSystemNode *node, char *name)
 {
-    //Screen_PrintF("systemfs_finddir-main:%s requestedName:%s\n", node->name, name);
-
-    FileSystemNode* child = node->firstChild;
+    FileSystemNode* child = node->first_child;
     while (NULL != child)
     {
         if (strcmp(name, child->name) == 0)
         {
-            //Screen_PrintF("systemfs_finddir-found:%s\n", name);
             return child;
         }
 
-        child = child->nextSibling;
+        child = child->next_sibling;
     }
 
     return NULL;
 }
 
-static int32 systemfs_read_meminfo_totalpages(File *file, uint32 size, uint8 *buffer)
+static int32_t systemfs_read_meminfo_totalpages(File *file, uint32_t size, uint8_t *buffer)
 {
     if (size >= 4)
     {
         if (file->offset == 0)
         {
-            int totalPages = getTotalPageCount();
+            int total_pages = vmm_get_total_page_count();
 
-            sprintf((char*)buffer, "%d", totalPages);
+            sprintf((char*)buffer, size, "%d", total_pages);
 
             int len = strlen((char*)buffer);
 
@@ -203,15 +199,15 @@ static int32 systemfs_read_meminfo_totalpages(File *file, uint32 size, uint8 *bu
     return -1;
 }
 
-static int32 systemfs_read_meminfo_usedpages(File *file, uint32 size, uint8 *buffer)
+static int32_t systemfs_read_meminfo_usedpages(File *file, uint32_t size, uint8_t *buffer)
 {
     if (size >= 4)
     {
         if (file->offset == 0)
         {
-            int usedPages = getUsedPageCount();
+            int usedPages = vmm_get_used_page_count();
 
-            sprintf((char*)buffer, "%d", usedPages);
+            sprintf((char*)buffer, size, "%d", usedPages);
 
             int len = strlen((char*)buffer);
 
@@ -227,7 +223,7 @@ static int32 systemfs_read_meminfo_usedpages(File *file, uint32 size, uint8 *buf
     return -1;
 }
 
-static BOOL systemfs_open_thread_file(File *file, uint32 flags)
+static BOOL systemfs_open_thread_file(File *file, uint32_t flags)
 {
     return TRUE;
 }
@@ -237,33 +233,37 @@ static void systemfs_close_thread_file(File *file)
 
 }
 
-static int32 systemfs_read_thread_file(File *file, uint32 size, uint8 *buffer)
+static int32_t systemfs_read_thread_file(File *file, uint32_t size, uint8_t *buffer)
 {
     if (size >= 128)
     {
         if (file->offset == 0)
         {
-            int threadId = atoi(file->node->name);
-            Thread* thread = getThreadById(threadId);
+            int thread_id = atoi(file->node->name);
+            Thread* thread = thread_get_by_id(thread_id);
             if (thread)
             {
-                int charIndex = 0;
-                charIndex += sprintf((char*)buffer + charIndex, "tid:%d\n", thread->threadId);
-                charIndex += sprintf((char*)buffer + charIndex, "userMode:%d\n", thread->userMode);
-                uint8 state[10];
-                threadStateToString(thread->state, state, 10);
-                charIndex += sprintf((char*)buffer + charIndex, "state:%s\n", state);
-                charIndex += sprintf((char*)buffer + charIndex, "contextSwitches:%d\n", thread->totalContextSwitchCount);
+                uint32_t char_index = 0;
+                char_index += sprintf((char*)buffer + char_index, size - char_index, "tid:%d\n", thread->threadId);
+                char_index += sprintf((char*)buffer + char_index, size - char_index, "birthTime:%d\n", thread->birth_time);
+                char_index += sprintf((char*)buffer + char_index, size - char_index, "userMode:%d\n", thread->user_mode);
+                uint8_t state[10];
+                thread_state_to_string(thread->state, state, 10);
+                char_index += sprintf((char*)buffer + char_index, size - char_index, "state:%s\n", state);
+                char_index += sprintf((char*)buffer + char_index, size - char_index, "syscalls:%d\n", thread->called_syscall_count);
+                char_index += sprintf((char*)buffer + char_index, size - char_index, "contextSwitches:%d\n", thread->context_switch_count);
+                char_index += sprintf((char*)buffer + char_index, size - char_index, "cpuTime:%d\n", thread->consumed_cpu_time_ms);
+                char_index += sprintf((char*)buffer + char_index, size - char_index, "cpuUsage:%d\n", thread->usage_cpu);
                 if (thread->owner)
                 {
-                    charIndex += sprintf((char*)buffer + charIndex, "process:%d\n", thread->owner->pid);
+                    char_index += sprintf((char*)buffer + char_index, size - char_index, "process:%d (%s)\n", thread->owner->pid, thread->owner->name);
                 }
                 else
                 {
-                    charIndex += sprintf((char*)buffer + charIndex, "process:-\n");
+                    char_index += sprintf((char*)buffer + char_index, size - char_index, "process:-\n");
                 }
 
-                int len = charIndex;
+                int len = char_index;
 
                 file->offset += len;
 
@@ -278,13 +278,13 @@ static int32 systemfs_read_thread_file(File *file, uint32 size, uint8 *buffer)
     return -1;
 }
 
-static void cleanThreadNodes(File *file)
+static void clean_thread_nodes(File *file)
 {
-    FileSystemNode* node = file->node->firstChild;
+    FileSystemNode* node = file->node->first_child;
 
     while (node)
     {
-        FileSystemNode* next = node->nextSibling;
+        FileSystemNode* next = node->next_sibling;
 
         kfree(node);
 
@@ -292,44 +292,44 @@ static void cleanThreadNodes(File *file)
     }
 }
 
-static BOOL systemfs_open_threads_dir(File *file, uint32 flags)
+static BOOL systemfs_open_threads_dir(File *file, uint32_t flags)
 {
     char buffer[16];
 
-    cleanThreadNodes(file);
+    clean_thread_nodes(file);
 
     //And fill again
 
-    FileSystemNode* nodePrevious = NULL;
+    FileSystemNode* node_previous = NULL;
 
-    Thread* thread = getMainKernelThread();
+    Thread* thread = thread_get_first();
 
     while (NULL != thread)
     {
-        FileSystemNode* nodeThread = kmalloc(sizeof(FileSystemNode));
-        memset((uint8*)nodeThread, 0, sizeof(FileSystemNode));
+        FileSystemNode* node_thread = kmalloc(sizeof(FileSystemNode));
+        memset((uint8_t*)node_thread, 0, sizeof(FileSystemNode));
 
-        sprintf(buffer, "%d", thread->threadId);
+        sprintf(buffer, 16, "%d", thread->threadId);
 
-        strcpy(nodeThread->name, buffer);
-        nodeThread->nodeType = FT_File;
-        nodeThread->open = systemfs_open_thread_file;
-        nodeThread->close = systemfs_close_thread_file;
-        nodeThread->read = systemfs_read_thread_file;
-        nodeThread->finddir = systemfs_finddir;
-        nodeThread->readdir = systemfs_readdir;
-        nodeThread->parent = file->node;
+        strcpy(node_thread->name, buffer);
+        node_thread->node_type = FT_FILE;
+        node_thread->open = systemfs_open_thread_file;
+        node_thread->close = systemfs_close_thread_file;
+        node_thread->read = systemfs_read_thread_file;
+        node_thread->finddir = systemfs_finddir;
+        node_thread->readdir = systemfs_readdir;
+        node_thread->parent = file->node;
 
-        if (nodePrevious)
+        if (node_previous)
         {
-            nodePrevious->nextSibling = nodeThread;
+            node_previous->next_sibling = node_thread;
         }
         else
         {
-            file->node->firstChild = nodeThread;
+            file->node->first_child = node_thread;
         }
 
-        nodePrevious = nodeThread;
+        node_previous = node_thread;
         thread = thread->next;
     }
 

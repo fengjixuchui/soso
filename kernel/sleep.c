@@ -1,17 +1,17 @@
 #include "sleep.h"
 #include "timer.h"
+#include "process.h"
 
-void sleepMilliseconds(Thread* thread, uint32 ms)
+void sleep_ms(Thread* thread, uint32_t ms)
 {
-    uint32 uptime = getUptimeMilliseconds();
+    uint32_t uptime = get_uptime_milliseconds();
 
     //target uptime to wakeup
-    uint32 target = uptime + ms;
+    uint32_t target = uptime + ms;
 
-    thread->state = TS_SLEEP;
-    thread->state_privateData = (void*)target;
+    thread_change_state(thread, TS_SLEEP, (void*)target);
 
-    enableInterrupts();
+    enable_interrupts();
 
     halt();
 }

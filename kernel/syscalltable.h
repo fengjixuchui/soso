@@ -35,7 +35,7 @@ enum
     SYS_sleepMilliseconds,
     SYS_executeOnTTY,
     SYS_manageMessage,
-    SYS_UNUSED,
+    SYS_rt_sigaction,
 
     SYS_mmap,
     SYS_munmap,
@@ -53,9 +53,17 @@ enum
     SYS_set_tid_address,
     SYS_exit_group,
     SYS_llseek,
-    SYS_UNUSED2,
+    SYS_select,
     SYS_statx,
     SYS_wait4,
+    SYS_clock_gettime64,
+    SYS_clock_settime64,
+    SYS_clock_getres64,
+    
+    SYS_shmget,
+    SYS_shmat,
+    SYS_shmdt,
+    SYS_shmctl,
 
     SYSCALL_COUNT
 };

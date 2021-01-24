@@ -1,65 +1,65 @@
 #include "common.h"
-#include "screen.h"
 #include "alloc.h"
 #include "vmm.h"
 #include "process.h"
-#include "debugprint.h"
+#include "log.h"
+#include "serial.h"
 
 #define KMALLOC_MINSIZE		16
 
-extern uint32 *gKernelPageDirectory;
+extern uint32_t *g_kernel_page_directory;
 
-static char *gKernelHeap = NULL;
-static uint32 gKernelHeapUsed = 0;
+static char *g_kernel_heap = NULL;
+static uint32_t g_kernel_heap_used = 0;
 
 
-void initializeKernelHeap()
+void initialize_kernel_heap()
 {
-    gKernelHeap = (char *) KERN_HEAP_BEGIN;
+    g_kernel_heap = (char *) KERN_HEAP_BEGIN;
 
-    ksbrkPage(1);
+    ksbrk_page(1);
 }
 
-void *ksbrkPage(int n)
+void *ksbrk_page(int n)
 {
     struct MallocHeader *chunk;
-    char *p_addr;
+    uint32_t p_addr;
     int i;
 
-    if ((gKernelHeap + (n * PAGESIZE_4M)) > (char *) KERN_HEAP_END) {
+    if ((g_kernel_heap + (n * PAGESIZE_4K)) > (char *) KERN_HEAP_END) {
         //Screen_PrintF("ERROR: ksbrk(): no virtual memory left for kernel heap !\n");
         return (char *) -1;
     }
 
-    chunk = (struct MallocHeader *) gKernelHeap;
+    chunk = (struct MallocHeader *) g_kernel_heap;
 
     for (i = 0; i < n; i++)
     {
-        p_addr = getPageFrame4M();
-
-        //Screen_PrintF("DEBUG: ksbrkPage(): got 4M on physical %x\n", p_addr);
+        p_addr = vmm_acquire_page_frame_4k();
 
         if ((int)(p_addr) < 0)
         {
-            PANIC("PANIC: ksbrkPage(): no free page frame available !");
+            PANIC("PANIC: ksbrk_page(): no free page frame available !");
             return (char *) -1;
         }
 
-        addPageToPd(gKernelPageDirectory, gKernelHeap, p_addr, 0); //add PG_USER to allow user programs to read kernel heap
+        vmm_add_page_to_pd(g_kernel_heap, p_addr, 0); //add PG_USER to allow user programs to read kernel heap
 
-        gKernelHeap += PAGESIZE_4M;
+        g_kernel_heap += PAGESIZE_4K;
     }
 
-    chunk->size = PAGESIZE_4M * n;
+    chunk->size = PAGESIZE_4K * n;
     chunk->used = 0;
 
     return chunk;
 }
 
-void *kmalloc(uint32 size)
+void *kmalloc(uint32_t size)
 {
-    if (size==0)
+    if (size == 0)
+    {
         return 0;
+    }
 
     unsigned long realsize;
     struct MallocHeader *chunk, *other;
@@ -74,7 +74,7 @@ void *kmalloc(uint32 size)
     {
         if (chunk->size == 0)
         {
-            printkf("\nPANIC: kmalloc(): corrupted chunk on %x with null size (heap %x) !\nSystem halted\n", chunk, gKernelHeap);
+            printkf("\nPANIC: kmalloc(): corrupted chunk on %x with null size (heap %x) !\nSystem halted\n", chunk, g_kernel_heap);
 
             PANIC("kmalloc()");
 
@@ -83,18 +83,18 @@ void *kmalloc(uint32 size)
 
         chunk = (struct MallocHeader *)((char *)chunk + chunk->size);
 
-        if (chunk == (struct MallocHeader *) gKernelHeap)
+        if (chunk == (struct MallocHeader *) g_kernel_heap)
         {
-            if ((int)(ksbrkPage((realsize / PAGESIZE_4M) + 1)) < 0)
+            if ((int)(ksbrk_page((realsize / PAGESIZE_4K) + 1)) < 0)
             {
                 PANIC("kmalloc(): no memory left for kernel !\nSystem halted\n");
 
                 return 0;
             }
         }
-        else if (chunk > (struct MallocHeader *) gKernelHeap)
+        else if (chunk > (struct MallocHeader *) g_kernel_heap)
         {
-            printkf("\nPANIC: kmalloc(): chunk on %x while heap limit is on %x !\nSystem halted\n", chunk, gKernelHeap);
+            printkf("\nPANIC: kmalloc(): chunk on %x while heap limit is on %x !\nSystem halted\n", chunk, g_kernel_heap);
 
             PANIC("kmalloc()");
 
@@ -117,84 +117,84 @@ void *kmalloc(uint32 size)
         chunk->used = 1;
     }
 
-    gKernelHeapUsed += realsize;
+    g_kernel_heap_used += realsize;
 
     return (char *) chunk + sizeof(struct MallocHeader);
 }
 
 void kfree(void *v_addr)
 {
-    if (v_addr==(void*)0)
+    if (v_addr == (void*)0)
+    {
         return;
+    }
 
     struct MallocHeader *chunk, *other;
 
-    chunk = (struct MallocHeader *)((uint32)v_addr - sizeof(struct MallocHeader));
+    chunk = (struct MallocHeader *)((uint32_t)v_addr - sizeof(struct MallocHeader));
     chunk->used = 0;
 
-    gKernelHeapUsed -= chunk->size;
+    g_kernel_heap_used -= chunk->size;
 
     //Merge free block with next free block
     while ((other = (struct MallocHeader *)((char *)chunk + chunk->size))
-           && other < (struct MallocHeader *)gKernelHeap
+           && other < (struct MallocHeader *)g_kernel_heap
            && other->used == 0)
     {
         chunk->size += other->size;
     }
 }
 
-static void sbrkPage(Process* process, int pageCount)
+static void sbrk_page(Process* process, int page_count)
 {
-    if (pageCount > 0)
+    if (page_count > 0)
     {
-        for (int i = 0; i < pageCount; ++i)
+        for (int i = 0; i < page_count; ++i)
         {
-            if ((process->brkNextUnallocatedPageBegin + PAGESIZE_4M) > (char*)(MEMORY_END - PAGESIZE_4M))
+            if ((process->brk_next_unallocated_page_begin + PAGESIZE_4K) > (char*)(MEMORY_END - PAGESIZE_4K))
             {
                 return;
             }
 
-            char * p_addr = getPageFrame4M();
+            uint32_t p_addr = vmm_acquire_page_frame_4k();
 
             if ((int)(p_addr) < 0)
             {
-                //PANIC("sbrkPage(): no free page frame available !");
+                //PANIC("sbrk_page(): no free page frame available !");
                 return;
             }
 
-            addPageToPd(process->pd, process->brkNextUnallocatedPageBegin, p_addr, PG_USER);
+            vmm_add_page_to_pd(process->brk_next_unallocated_page_begin, p_addr, PG_USER | PG_OWNED);
 
-            SET_PAGEFRAME_USED(process->mmappedVirtualMemory, PAGE_INDEX_4M((uint32)process->brkNextUnallocatedPageBegin));
-            SET_PAGEFRAME_USED(process->mmappedVirtualMemoryOwned, PAGE_INDEX_4M((uint32)process->brkNextUnallocatedPageBegin));
+            SET_PAGEFRAME_USED(process->mmapped_virtual_memory, PAGE_INDEX_4K((uint32_t)process->brk_next_unallocated_page_begin));
 
-            process->brkNextUnallocatedPageBegin += PAGESIZE_4M;
+            process->brk_next_unallocated_page_begin += PAGESIZE_4K;
         }
     }
-    else if (pageCount < 0)
+    else if (page_count < 0)
     {
-        pageCount *= -1;
+        page_count *= -1;
 
-        for (int i = 0; i < pageCount; ++i)
+        for (int i = 0; i < page_count; ++i)
         {
-            if (process->brkNextUnallocatedPageBegin - PAGESIZE_4M >= process->brkBegin)
+            if (process->brk_next_unallocated_page_begin - PAGESIZE_4K >= process->brk_begin)
             {
-                process->brkNextUnallocatedPageBegin -= PAGESIZE_4M;
+                process->brk_next_unallocated_page_begin -= PAGESIZE_4K;
 
                 //This also releases the page frame
-                removePageFromPd(process->pd, process->brkNextUnallocatedPageBegin, TRUE);
+                vmm_remove_page_from_pd(process->brk_next_unallocated_page_begin);
 
-                SET_PAGEFRAME_UNUSED(process->mmappedVirtualMemory, (uint32)process->brkNextUnallocatedPageBegin);
-                SET_PAGEFRAME_UNUSED(process->mmappedVirtualMemoryOwned, (uint32)process->brkNextUnallocatedPageBegin);
+                SET_PAGEFRAME_UNUSED(process->mmapped_virtual_memory, (uint32_t)process->brk_next_unallocated_page_begin);
             }
         }
     }
 }
 
-void initializeProgramBreak(Process* process, uint32 size)
+void initialize_program_break(Process* process, uint32_t size)
 {
-    process->brkBegin = (char*) USER_OFFSET;
-    process->brkEnd = process->brkBegin;
-    process->brkNextUnallocatedPageBegin = process->brkBegin;
+    process->brk_begin = (char*) USER_OFFSET;
+    process->brk_end = process->brk_begin;
+    process->brk_next_unallocated_page_begin = process->brk_begin;
 
     //Userland programs (their code, data,..) start from USER_OFFSET
     //Lets allocate some space for them by moving program break.
@@ -202,59 +202,49 @@ void initializeProgramBreak(Process* process, uint32 size)
     sbrk(process, size);
 }
 
-void *sbrk(Process* process, int nBytes)
+void *sbrk(Process* process, int n_bytes)
 {
-    //Screen_PrintF("sbrk:1: pid:%d nBytes:%d\n", process->pid, nBytes);
+    char* previous_break = process->brk_end;
 
-    char* previousBreak = process->brkEnd;
-
-    if (nBytes > 0)
+    if (n_bytes > 0)
     {
-        int remainingInThePage = process->brkNextUnallocatedPageBegin - process->brkEnd;
+        int remainingInThePage = process->brk_next_unallocated_page_begin - process->brk_end;
 
-        //Screen_PrintF("sbrk:2: remainingInThePage:%d\n", remainingInThePage);
-
-        if (nBytes > remainingInThePage)
+        if (n_bytes > remainingInThePage)
         {
-            int bytesNeededInNewPages = nBytes - remainingInThePage;
-            int neededNewPageCount = ((bytesNeededInNewPages-1) / PAGESIZE_4M) + 1;
+            int bytesNeededInNewPages = n_bytes - remainingInThePage;
+            int neededNewPageCount = ((bytesNeededInNewPages-1) / PAGESIZE_4K) + 1;
 
-            //Screen_PrintF("sbrk:3: neededNewPageCount:%d\n", neededNewPageCount);
-
-            uint32 freePages = getFreePageCount();
-            if ((uint32)neededNewPageCount + 1 > freePages)
+            uint32_t freePages = vmm_get_free_page_count();
+            if ((uint32_t)neededNewPageCount + 1 > freePages)
             {
                 return (void*)-1;
             }
 
-            sbrkPage(process, neededNewPageCount);
+            sbrk_page(process, neededNewPageCount);
         }
     }
-    else if (nBytes < 0)
+    else if (n_bytes < 0)
     {
-        char* currentPageBegin = process->brkNextUnallocatedPageBegin - PAGESIZE_4M;
+        char* currentPageBegin = process->brk_next_unallocated_page_begin - PAGESIZE_4K;
 
-        int remainingInThePage = process->brkEnd - currentPageBegin;
+        int remainingInThePage = process->brk_end - currentPageBegin;
 
-        //Screen_PrintF("sbrk:4: remainingInThePage:%d\n", remainingInThePage);
-
-        if (-nBytes > remainingInThePage)
+        if (-n_bytes > remainingInThePage)
         {
-            int bytesInPreviousPages = -nBytes - remainingInThePage;
-            int neededNewPageCount = ((bytesInPreviousPages-1) / PAGESIZE_4M) + 1;
+            int bytesInPreviousPages = -n_bytes - remainingInThePage;
+            int neededNewPageCount = ((bytesInPreviousPages-1) / PAGESIZE_4K) + 1;
 
-            //Screen_PrintF("sbrk:5: neededNewPageCount:%d\n", neededNewPageCount);
-
-            sbrkPage(process, -neededNewPageCount);
+            sbrk_page(process, -neededNewPageCount);
         }
     }
 
-    process->brkEnd += nBytes;
+    process->brk_end += n_bytes;
 
-    return previousBreak;
+    return previous_break;
 }
 
-uint32 getKernelHeapUsed()
+uint32_t get_kernel_heap_used()
 {
-    return gKernelHeapUsed;
+    return g_kernel_heap_used;
 }

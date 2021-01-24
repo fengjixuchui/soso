@@ -5,10 +5,10 @@
 
 typedef struct HashTable HashTable;
 
-HashTable* HashTable_create(uint32 capacity);
-void HashTable_destroy(HashTable* hashTable);
-BOOL HashTable_search(HashTable* hashTable, uint32 key, uint32* value);
-BOOL HashTable_insert(HashTable* hashTable, uint32 key, uint32 data);
-BOOL HashTable_remove(HashTable* hashTable, uint32 key);
+HashTable* hashtable_create(uint32_t capacity);
+void hashtable_destroy(HashTable* hashtable);
+BOOL hashtable_search(HashTable* hashtable, uint32_t key, uint32_t* value);
+BOOL hashtable_insert(HashTable* hashtable, uint32_t key, uint32_t data);
+BOOL hashtable_remove(HashTable* hashtable, uint32_t key);
 
 #endif // HASHTABLE_H

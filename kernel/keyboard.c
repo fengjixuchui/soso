@@ -1,75 +1,74 @@
 #include "keyboard.h"
 #include "isr.h"
 #include "common.h"
-#include "screen.h"
-#include "ttydriver.h"
 #include "fs.h"
 #include "device.h"
 #include "alloc.h"
 #include "devfs.h"
 #include "list.h"
+#include "console.h"
 
-static uint8* gKeyBuffer = NULL;
-static uint32 gKeyBufferWriteIndex = 0;
-static uint32 gKeyBufferReadIndex = 0;
+static uint8_t* g_key_buffer = NULL;
+static uint32_t g_key_buffer_write_index = 0;
+static uint32_t g_key_buffer_read_index = 0;
 
 #define KEYBUFFER_SIZE 128
 
-static BOOL keyboard_open(File *file, uint32 flags);
+static BOOL keyboard_open(File *file, uint32_t flags);
 static void keyboard_close(File *file);
-static int32 keyboard_read(File *file, uint32 size, uint8 *buffer);
-static int32 keyboard_ioctl(File *file, int32 request, void * argp);
+static int32_t keyboard_read(File *file, uint32_t size, uint8_t *buffer);
+static int32_t keyboard_ioctl(File *file, int32_t request, void * argp);
 
 typedef enum ReadMode
 {
-    Blocking = 0,
-    NonBlocking = 1
+    RM_BLOCKING = 0,
+    RM_NON_BLOCKING = 1
 } ReadMode;
 
 typedef struct Reader
 {
-    uint32 readIndex;
-    ReadMode readMode;
+    uint32_t read_index;
+    ReadMode read_mode;
 } Reader;
 
-static List* gReaders = NULL;
+static List* g_readers = NULL;
 
-static void handleKeyboardInterrupt(Registers *regs);
+static void handle_keyboard_interrupt(Registers *regs);
 
-void initializeKeyboard()
+void keyboard_initialize()
 {
     Device device;
-    memset((uint8*)&device, 0, sizeof(Device));
+    memset((uint8_t*)&device, 0, sizeof(Device));
     strcpy(device.name, "keyboard");
-    device.deviceType = FT_CharacterDevice;
+    device.device_type = FT_CHARACTER_DEVICE;
     device.open = keyboard_open;
     device.close = keyboard_close;
     device.read = keyboard_read;
     device.ioctl = keyboard_ioctl;
 
-    gKeyBuffer = kmalloc(KEYBUFFER_SIZE);
-    memset((uint8*)gKeyBuffer, 0, KEYBUFFER_SIZE);
+    g_key_buffer = kmalloc(KEYBUFFER_SIZE);
+    memset((uint8_t*)g_key_buffer, 0, KEYBUFFER_SIZE);
 
-    gReaders = List_Create();
+    g_readers = list_create();
 
-    registerDevice(&device);
+    devfs_register_device(&device);
 
-    registerInterruptHandler(IRQ1, handleKeyboardInterrupt);
+    interrupt_register(IRQ1, handle_keyboard_interrupt);
 }
 
-static BOOL keyboard_open(File *file, uint32 flags)
+static BOOL keyboard_open(File *file, uint32_t flags)
 {
     Reader* reader = (Reader*)kmalloc(sizeof(Reader));
-    reader->readIndex = 0;
-    reader->readMode = Blocking;
+    reader->read_index = 0;
+    reader->read_mode = RM_BLOCKING;
 
-    if (gKeyBufferWriteIndex > 0)
+    if (g_key_buffer_write_index > 0)
     {
-        reader->readIndex = gKeyBufferWriteIndex;
+        reader->read_index = g_key_buffer_write_index;
     }
-    file->privateData = (void*)reader;
+    file->private_data = (void*)reader;
 
-    List_Append(gReaders, file);
+    list_append(g_readers, file);
 
     return TRUE;
 }
@@ -78,69 +77,69 @@ static void keyboard_close(File *file)
 {
     //Screen_PrintF("keyboard_close\n");
 
-    Reader* reader = (Reader*)file->privateData;
+    Reader* reader = (Reader*)file->private_data;
 
     kfree(reader);
 
-    List_RemoveFirstOccurrence(gReaders, file);
+    list_remove_first_occurrence(g_readers, file);
 }
 
-static int32 keyboard_read(File *file, uint32 size, uint8 *buffer)
+static int32_t keyboard_read(File *file, uint32_t size, uint8_t *buffer)
 {
-    Reader* reader = (Reader*)file->privateData;
+    Reader* reader = (Reader*)file->private_data;
 
-    uint32 readIndex = reader->readIndex;
+    uint32_t read_index = reader->read_index;
 
-    if (reader->readMode == Blocking)
+    if (reader->read_mode == RM_BLOCKING)
     {
-        while (readIndex == gKeyBufferWriteIndex)
+        while (read_index == g_key_buffer_write_index)
         {
-            file->thread->state = TS_WAITIO;
-            file->thread->state_privateData = keyboard_read;
-            enableInterrupts();
+            thread_change_state(file->thread, TS_WAITIO, keyboard_read);
+            
+            enable_interrupts();
             halt();
         }
     }
 
-    disableInterrupts();
+    disable_interrupts();
 
-    if (readIndex == gKeyBufferWriteIndex)
+    if (read_index == g_key_buffer_write_index)
     {
         //non-blocking return here
         return -1;
     }
 
-    buffer[0] = gKeyBuffer[readIndex];
-    readIndex++;
-    readIndex %= KEYBUFFER_SIZE;
+    buffer[0] = g_key_buffer[read_index];
+    read_index++;
+    read_index %= KEYBUFFER_SIZE;
 
-    reader->readIndex = readIndex;
+    reader->read_index = read_index;
 
     return 1;
 }
 
-static int32 keyboard_ioctl(File *file, int32 request, void * argp)
+static int32_t keyboard_ioctl(File *file, int32_t request, void * argp)
 {
-    Reader* reader = (Reader*)file->privateData;
+    Reader* reader = (Reader*)file->private_data;
 
     int cmd = (int)argp;
 
     switch (request)
     {
     case 0: //get
-        *(int*)argp = (int)reader->readMode;
+        *(int*)argp = (int)reader->read_mode;
         return 0;
         break;
     case 1: //set
         if (cmd == 0)
         {
-            reader->readMode = Blocking;
+            reader->read_mode = RM_BLOCKING;
 
             return 0;
         }
         else if (cmd == 1)
         {
-            reader->readMode = NonBlocking;
+            reader->read_mode = RM_NON_BLOCKING;
             return 0;
         }
         break;
@@ -151,9 +150,9 @@ static int32 keyboard_ioctl(File *file, int32 request, void * argp)
     return -1;
 }
 
-static void handleKeyboardInterrupt(Registers *regs)
+static void handle_keyboard_interrupt(Registers *regs)
 {
-    uint8 scancode = 0;
+    uint8_t scancode = 0;
     do
     {
         scancode = inb(0x64);
@@ -161,12 +160,12 @@ static void handleKeyboardInterrupt(Registers *regs)
 
     scancode = inb(0x60);
 
-    gKeyBuffer[gKeyBufferWriteIndex] = scancode;
-    gKeyBufferWriteIndex++;
-    gKeyBufferWriteIndex %= KEYBUFFER_SIZE;
+    g_key_buffer[g_key_buffer_write_index] = scancode;
+    g_key_buffer_write_index++;
+    g_key_buffer_write_index %= KEYBUFFER_SIZE;
 
     //Wake readers
-    List_Foreach(n, gReaders)
+    list_foreach(n, g_readers)
     {
         File* file = n->data;
 
@@ -174,11 +173,10 @@ static void handleKeyboardInterrupt(Registers *regs)
         {
             if (file->thread->state_privateData == keyboard_read)
             {
-                file->thread->state = TS_RUN;
-                file->thread->state_privateData = NULL;
+                thread_resume(file->thread);
             }
         }
     }
 
-    sendKeyInputToTTY(getActiveTTY(), scancode);
+    console_send_key(scancode);
 }
